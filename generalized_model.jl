@@ -31,7 +31,7 @@ function build_generalized_supply_chain_model(
     optimizer_factory=nothing
 )
     # Process arc_definitions to create arcs and arc_data
-    arcs = Tuple{Any, Any}[]
+    arcs = Tuple{Any, Any}[] # (NodeName, NodeName)
     arc_data = Dict{Tuple{Any, Any}, Dict{Symbol, Any}}()
     for arc_def in arc_definitions
         push!(arcs, (arc_def[:from], arc_def[:to]))
@@ -88,7 +88,7 @@ function build_generalized_supply_chain_model(
     # --- Constraints ---
 
     # Flow Balance Constraints (for intermediate and source nodes)
-    @constraint(model, flow_balance[n in nodes, k in K; node_data[n][:type] != :demand],
+    @constraint(model, flow_balance[n in nodes, k in K; node_data[n][:type] == :intermediate],
         # Inflow
         sum(flow[i, n, k] for i in nodes if (i, n) in A)
         ==
@@ -158,16 +158,6 @@ arc_definitions_ex = [
     Dict(:from => "W2L", :to => "C2", :cost => 1.1)
 ]
 
-# Generate arcs and costs from the connections
-# arcs_ex = Tuple{String, String}[] # Moved into the function
-# arc_data_ex = Dict{Tuple{Any, Any}, Dict{Symbol, Any}}() # Moved into the function
-
-# Process connections to generate arcs and their costs
-# for conn in network_connections # Moved into the function
-#     push!(arcs_ex, (conn[:from], conn[:to])) # Moved into the function
-#     arc_data_ex[(conn[:from], conn[:to])] = Dict(:transport_cost => conn[:cost]) # Moved into the function
-# end # Moved into the function
-
 configurable_nodes_ex = ["S1", "S2", "S3", "W1S", "W1L", "W2S", "W2L"] # Suppliers and DC options
 
 node_data_ex = Dict(
@@ -176,12 +166,12 @@ node_data_ex = Dict(
     "S3" => Dict(:type => :source, :capacity => 550, :processing_cost => 0),
     "M1" => Dict(:type => :intermediate, :capacity => 1000, :processing_cost => 10), # pcm[1]
     "M2" => Dict(:type => :intermediate, :capacity => 1200, :processing_cost => 12), # pcm[2]
-    "W1S" => Dict(:type => :intermediate, :capacity => 200, :processing_cost => 0, :opening_cost => 10000), # caplw[small,1], flw[small,1]
-    "W1L" => Dict(:type => :intermediate, :capacity => 400, :processing_cost => 0, :opening_cost => 15000), # caplw[large,1], flw[large,1]
-    "W2S" => Dict(:type => :intermediate, :capacity => 250, :processing_cost => 0, :opening_cost => 12000), # caplw[small,2], flw[small,2]
-    "W2L" => Dict(:type => :intermediate, :capacity => 450, :processing_cost => 0, :opening_cost => 18000), # caplw[large,2], flw[large,2]
-    "C1" => Dict(:type => :demand, :demand => 150, :lost_demand_penalty => 50), # dc[1], lsc[1]
-    "C2" => Dict(:type => :demand, :demand => 200, :lost_demand_penalty => 60)  # dc[2], lsc[2]
+    "W1S" => Dict(:type => :intermediate, :capacity => 200, :processing_cost => 0, :opening_cost => 100), # caplw[small,1], flw[small,1]
+    "W1L" => Dict(:type => :intermediate, :capacity => 400, :processing_cost => 0, :opening_cost => 150), # caplw[large,1], flw[large,1]
+    "W2S" => Dict(:type => :intermediate, :capacity => 250, :processing_cost => 0, :opening_cost => 120), # caplw[small,2], flw[small,2]
+    "W2L" => Dict(:type => :intermediate, :capacity => 450, :processing_cost => 0, :opening_cost => 180), # caplw[large,2], flw[large,2]
+    "C1" => Dict(:type => :demand, :demand => 150, :lost_demand_penalty => 99999999), # dc[1], lsc[1]
+    "C2" => Dict(:type => :demand, :demand => 200, :lost_demand_penalty => 99999999)  # dc[2], lsc[2]
 )
 
 scenario_data_ex = Dict(
@@ -189,14 +179,14 @@ scenario_data_ex = Dict(
         # Alpha (Suppliers)
         ("S1", 1)=>1, ("S2", 1)=>1, ("S3", 1)=>1,
         ("S1", 2)=>1, ("S2", 2)=>1, ("S3", 2)=>1,
-        ("S1", 3)=>1, ("S2", 3)=>0, ("S3", 3)=>0,
+        ("S1", 3)=>1, ("S2", 3)=>1, ("S3", 3)=>1,
         # Beta (Manufacturers)
         ("M1", 1)=>1, ("M2", 1)=>1,
         ("M1", 2)=>1, ("M2", 2)=>1,
         ("M1", 3)=>1, ("M2", 3)=>1,
         # Delta (Warehouses - affects all options at a location)
         ("W1S", 1)=>1, ("W1L", 1)=>1, ("W2S", 1)=>1, ("W2L", 1)=>1,
-        ("W1S", 2)=>0, ("W1L", 2)=>0, ("W2S", 2)=>1, ("W2L", 2)=>1, # W1 fails
+        ("W1S", 2)=>1, ("W1L", 2)=>1, ("W2S", 2)=>1, ("W2L", 2)=>1, # W1 fails
         ("W1S", 3)=>1, ("W1L", 3)=>1, ("W2S", 3)=>1, ("W2L", 3)=>1,
     ),
     :demand_factor => Dict() # Demand constant
@@ -204,6 +194,33 @@ scenario_data_ex = Dict(
 
 example_pk_ex = Dict(1 => 0.7, 2 => 0.2, 3 => 0.1)
 revenue_per_unit_ex = 50
+
+# nodes_ex = ["S1", "S2", "R"]
+
+# arc_definitions_ex = [
+#     Dict(:from => "S1", :to => "R", :cost => 10),
+#     Dict(:from => "S2", :to => "R", :cost => 10),
+# ]
+
+# configurable_nodes_ex = ["S1", "S2"] # Suppliers and DC options
+
+# node_data_ex = Dict(
+#     "S1" => Dict(:type => :source, :capacity => 500, :processing_cost => 0, :opening_cost => 20),
+#     "S2" => Dict(:type => :source, :capacity => 600, :processing_cost => 0, :opening_cost => 10),
+#     "R" => Dict(:type => :demand, :demand => 1, :lost_demand_penalty => 500)
+# )
+
+# scenario_data_ex = Dict(
+#     :capacity_factor => Dict(
+#         ("S1", 1)=>1, ("S2", 1)=>1,
+#         ("S1", 2)=>1, ("S2", 2)=>1,
+#         ("S1", 3)=>1, ("S2", 3)=>1,
+#     ),
+#     :demand_factor => Dict()
+# )
+
+# example_pk_ex = Dict(1 => 0.7, 2 => 0.2, 3 => 0.1)
+# revenue_per_unit_ex = 50
 
 # Build the generalized model
 model_gen = build_generalized_supply_chain_model(
@@ -219,19 +236,19 @@ model_gen = build_generalized_supply_chain_model(
 
 # Add constraints specific to this example (DC size choice)
 # Ensure only one size (or none) is chosen per DC location
-@constraint(model_gen, dc_size_select_w1, model_gen[:is_open]["W1S"] + model_gen[:is_open]["W1L"] <= 1)
-@constraint(model_gen, dc_size_select_w2, model_gen[:is_open]["W2S"] + model_gen[:is_open]["W2L"] <= 1)
+# @constraint(model_gen, dc_size_select_w1, model_gen[:is_open]["W1S"] + model_gen[:is_open]["W1L"] <= 1)
+# @constraint(model_gen, dc_size_select_w2, model_gen[:is_open]["W2S"] + model_gen[:is_open]["W2L"] <= 1)
 
 # Add minimum flow constraint (original constraint 3)?
 # QSM[s, m, k] >= msm * alpha[s, k] * y[s]
 # Translates to: flow[s, m, k] >= msm * capacity_factor[s, k] * is_open[s] for s in S, m in M
-msm_val = 10 # Original msm value
-S_nodes = ["S1", "S2", "S3"]
-M_nodes = ["M1", "M2"]
-K_scen = [1, 2, 3]
-@constraint(model_gen, min_supplier_flow[s in S_nodes, m in M_nodes, k in K_scen; (s,m) in model_gen.ext[:arcs]],
-    model_gen[:flow][s, m, k] >= msm_val * get(scenario_data_ex[:capacity_factor], (s, k), 1.0) * model_gen[:is_open][s]
-)
+# msm_val = 10 # Original msm value
+# S_nodes = ["S1", "S2", "S3"]
+# M_nodes = ["M1", "M2"]
+# K_scen = [1, 2, 3]
+# @constraint(model_gen, min_supplier_flow[s in S_nodes, m in M_nodes, k in K_scen; (s,m) in model_gen.ext[:arcs]],
+#     model_gen[:flow][s, m, k] >= msm_val * get(scenario_data_ex[:capacity_factor], (s, k), 1.0) * model_gen[:is_open][s]
+# )
 
 
 # Print the model structure (optional)
@@ -254,6 +271,7 @@ if termination_status(model_gen) == MOI.OPTIMAL
 
     println("\n--- Second-Stage Variables (Non-Zero Flow per Scenario) ---")
     nodes_in_flow = union(first.(model_gen.ext[:arcs]), last.(model_gen.ext[:arcs]))
+    K_scen = keys(example_pk_ex) # Re-define K_scen for the results printing section
     for k in K_scen
         println("\n  Scenario ", k, " (Probability: ", example_pk_ex[k], ")")
         println("    Flow (source -> destination: value):")
@@ -273,6 +291,7 @@ if termination_status(model_gen) == MOI.OPTIMAL
             if ld_val > 1e-6
                 println("      Node ", n, ": ", round(ld_val, digits=2))
             end
+
         end
     end
 
