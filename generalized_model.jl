@@ -299,6 +299,156 @@ else
     println("Solver status: ", termination_status(model_gen))
 end
 
+# --- Plotting the results ---
+if termination_status(model_gen) == MOI.OPTIMAL
+    try
+        println("\nAttempting to generate plot...")
+
+        # Ensure plotting packages are loaded
+        # Users should ensure Graphs, GraphMakie, CairoMakie are in their Project.toml or install them
+        # using Pkg; Pkg.add(["Graphs", "GraphMakie", "CairoMakie"])
+        using Graphs
+        using GraphMakie
+        using CairoMakie
+        using GeometryBasics # For Point2f
+
+        node_to_id = Dict(name => i for (i, name) in enumerate(nodes_ex))
+        id_to_node = Dict(i => name for (name, i) in node_to_id)
+
+        num_nodes = length(nodes_ex)
+        g = SimpleDiGraph(num_nodes)
+
+        for arc_def in arc_definitions_ex
+            if haskey(node_to_id, arc_def[:from]) && haskey(node_to_id, arc_def[:to])
+                u = node_to_id[arc_def[:from]]
+                v = node_to_id[arc_def[:to]]
+                add_edge!(g, u, v)
+            else
+                println("Warning: Node in arc_definition not found in nodes_ex. Arc: $(arc_def)")
+            end
+        end
+
+        node_colors_plot = Vector{Symbol}(undef, num_nodes)
+        for i in 1:num_nodes
+            node_name = id_to_node[i]
+            if node_name in configurable_nodes_ex
+                if value(model_gen[:is_open][node_name]) > 0.5
+                    node_colors_plot[i] = :green
+                else
+                    node_colors_plot[i] = :red
+                end
+            else
+                node_type = node_data_ex[node_name][:type]
+                if node_type == :source
+                    node_colors_plot[i] = :lightgray
+                elseif node_type == :demand
+                    node_colors_plot[i] = :dodgerblue
+                elseif node_type == :intermediate
+                    node_colors_plot[i] = :orange
+                else
+                    node_colors_plot[i] = :gray
+                end
+            end
+        end
+
+        labels_plot = [String(n) for n in nodes_ex]
+
+        # --- Enhanced Layout Logic for Echelons ---
+        layout_positions = Vector{Point2f}(undef, num_nodes)
+        
+        # Categorize nodes for layout by name prefixes
+        node_categories = Dict{String, Vector{String}}(
+            "Suppliers" => [],
+            "Manufacturers" => [],
+            "Warehouses" => [], # Corresponds to DCs in the image
+            "Retailers" => []    # Corresponds to Customers in the image
+        )
+
+        for node_name_str in nodes_ex # nodes_ex contains strings like "S1", "M1"
+            node_name = String(node_name_str) # Ensure it's a String
+            if startswith(node_name, "S")
+                push!(node_categories["Suppliers"], node_name)
+            elseif startswith(node_name, "M")
+                push!(node_categories["Manufacturers"], node_name)
+            elseif startswith(node_name, "W")
+                push!(node_categories["Warehouses"], node_name)
+            elseif startswith(node_name, "C")
+                push!(node_categories["Retailers"], node_name)
+            else
+                println("Warning: Node name $(node_name) does not fit S/M/W/C prefix convention for layout. It might not be placed correctly.")
+                # Assign to a default category or handle as needed, e.g., put in a miscellaneous last column
+                # For now, they might not get a position from this logic.
+            end
+        end
+
+        # Ordered echelons for layout
+        ordered_echelon_names = ["Suppliers", "Manufacturers", "Warehouses", "Retailers"]
+        
+        current_x = 0.0
+        x_increment = 2.5 # Spacing between echelons
+
+        for echelon_name in ordered_echelon_names
+            # Sort nodes within the echelon for consistent vertical placement
+            nodes_in_echelon = sort(get(node_categories, echelon_name, String[])) 
+            
+            if isempty(nodes_in_echelon)
+                continue # Skip if no nodes in this echelon type for the current example data
+            end
+
+            num_in_echelon = length(nodes_in_echelon)
+            y_spacing_factor = 1.0 # Adjust if nodes are too close or too far vertically
+
+            for (j, node_name) in enumerate(nodes_in_echelon)
+                if haskey(node_to_id, node_name)
+                    idx = node_to_id[node_name]
+                    # Calculate y position: centers the group of nodes vertically
+                    pos_y = (num_in_echelon > 1) ? ((j - 1) - (num_in_echelon - 1) / 2.0) * y_spacing_factor : 0.0
+                    layout_positions[idx] = Point2f(current_x, pos_y)
+                else
+                    println("Warning: Node $(node_name) from category $(echelon_name) not found in node_to_id map.")
+                end
+            end
+            current_x += x_increment 
+        end
+        
+        # Fallback for any node not caught by echelon logic (e.g. due to naming)
+        for i in 1:num_nodes
+            if !isassigned(layout_positions, i)
+                node_name_unassigned = id_to_node[i]
+                println("Warning: Node $(node_name_unassigned) was not assigned a layout position by echelon logic. Placing at default relative position.")
+                # Attempt a basic placement for unassigned nodes to avoid errors, though layout might be messy
+                layout_positions[i] = Point2f(current_x, (i % 5) - 2) # Simple fallback
+            end
+        end
+
+        fig = Figure(resolution = (1024, 768)) # Increased resolution for more complex graph
+        ax = Axis(fig[1,1])
+        
+        graphplot!(ax, g,
+            layout = layout_positions,
+            node_color = node_colors_plot,
+            nlabels = labels_plot,        # Use nlabels for node labels
+            nlabels_fontsize = 15,     # Set font size for labels
+            nlabels_align = (:center, :center),
+            node_size = 25,              # Adjusted node size
+            arrow_size = 15,             # Adjusted arrow size
+            edge_width = 2,              # Adjusted edge width
+            edge_color = :gray40
+        )
+        hidedecorations!(ax)
+        hidespines!(ax)
+        
+        save("supply_chain_network.png", fig)
+        println("Plot saved to supply_chain_network.png")
+    catch e
+        println("Error during plotting: ", e)
+        @warn "Plotting failed. Please ensure Graphs.jl, GraphMakie.jl, and CairoMakie.jl are installed and your environment is set up correctly."
+    end
+else
+    println("Skipping plot generation as the model was not solved optimally.")
+end
+
+
 # println("Model built successfully.")
 
 
