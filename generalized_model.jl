@@ -1,5 +1,10 @@
 using JuMP
 using HiGHS # Example solver
+using Graphs
+using GraphMakie
+using CairoMakie
+using GeometryBasics # For Point2f
+using Colors         # For RGBA
 
 """
 Builds a generalized two-stage stochastic supply chain network design model.
@@ -125,102 +130,102 @@ end
 
 # Let's proceed with the separate nodes approach for DCs in the example data.
 
-nodes_ex = ["S1", "S2", "S3", "M1", "M2", "W1S", "W1L", "W2S", "W2L", "C1", "C2"] # S=Small, L=Large
+# nodes_ex = ["S1", "S2", "S3", "M1", "M2", "W1S", "W1L", "W2S", "W2L", "C1", "C2"] # S=Small, L=Large
 
-# Define network structure as a simple array of connections
-arc_definitions_ex = [
-    # Supplier -> Manufacturer connections
-    Dict(:from => "S1", :to => "M1", :cost => 5.0),
-    Dict(:from => "S1", :to => "M2", :cost => 5.5),
-    Dict(:from => "S2", :to => "M1", :cost => 6.0),
-    Dict(:from => "S2", :to => "M2", :cost => 6.5),
-    Dict(:from => "S3", :to => "M1", :cost => 7.0),
-    Dict(:from => "S3", :to => "M2", :cost => 7.5),
-
-    # Manufacturer -> Warehouse connections
-    Dict(:from => "M1", :to => "W1S", :cost => 2.0),
-    Dict(:from => "M1", :to => "W1L", :cost => 2.0),
-    Dict(:from => "M1", :to => "W2S", :cost => 2.5),
-    Dict(:from => "M1", :to => "W2L", :cost => 2.5),
-    Dict(:from => "M2", :to => "W1S", :cost => 2.2),
-    Dict(:from => "M2", :to => "W1L", :cost => 2.2),
-    Dict(:from => "M2", :to => "W2S", :cost => 2.7),
-    Dict(:from => "M2", :to => "W2L", :cost => 2.7),
-
-    # Warehouse -> Customer connections
-    Dict(:from => "W1S", :to => "C1", :cost => 1.0),
-    Dict(:from => "W1S", :to => "C2", :cost => 1.2),
-    Dict(:from => "W1L", :to => "C1", :cost => 1.0),
-    Dict(:from => "W1L", :to => "C2", :cost => 1.2),
-    Dict(:from => "W2S", :to => "C1", :cost => 1.3),
-    Dict(:from => "W2S", :to => "C2", :cost => 1.1),
-    Dict(:from => "W2L", :to => "C1", :cost => 1.3),
-    Dict(:from => "W2L", :to => "C2", :cost => 1.1)
-]
-
-configurable_nodes_ex = ["S1", "S2", "S3", "W1S", "W1L", "W2S", "W2L"] # Suppliers and DC options
-
-node_data_ex = Dict(
-    "S1" => Dict(:type => :source, :capacity => 500, :processing_cost => 0),
-    "S2" => Dict(:type => :source, :capacity => 600, :processing_cost => 0),
-    "S3" => Dict(:type => :source, :capacity => 550, :processing_cost => 0),
-    "M1" => Dict(:type => :intermediate, :capacity => 1000, :processing_cost => 10), # pcm[1]
-    "M2" => Dict(:type => :intermediate, :capacity => 1200, :processing_cost => 12), # pcm[2]
-    "W1S" => Dict(:type => :intermediate, :capacity => 200, :processing_cost => 0, :opening_cost => 100), # caplw[small,1], flw[small,1]
-    "W1L" => Dict(:type => :intermediate, :capacity => 400, :processing_cost => 0, :opening_cost => 150), # caplw[large,1], flw[large,1]
-    "W2S" => Dict(:type => :intermediate, :capacity => 250, :processing_cost => 0, :opening_cost => 120), # caplw[small,2], flw[small,2]
-    "W2L" => Dict(:type => :intermediate, :capacity => 450, :processing_cost => 0, :opening_cost => 180), # caplw[large,2], flw[large,2]
-    "C1" => Dict(:type => :demand, :demand => 150, :lost_demand_penalty => 99999999), # dc[1], lsc[1]
-    "C2" => Dict(:type => :demand, :demand => 200, :lost_demand_penalty => 99999999)  # dc[2], lsc[2]
-)
-
-scenario_data_ex = Dict(
-    :capacity_factor => Dict(
-        # Alpha (Suppliers)
-        ("S1", 1)=>1, ("S2", 1)=>1, ("S3", 1)=>1,
-        ("S1", 2)=>1, ("S2", 2)=>1, ("S3", 2)=>1,
-        ("S1", 3)=>1, ("S2", 3)=>1, ("S3", 3)=>1,
-        # Beta (Manufacturers)
-        ("M1", 1)=>1, ("M2", 1)=>1,
-        ("M1", 2)=>1, ("M2", 2)=>1,
-        ("M1", 3)=>1, ("M2", 3)=>1,
-        # Delta (Warehouses - affects all options at a location)
-        ("W1S", 1)=>1, ("W1L", 1)=>1, ("W2S", 1)=>1, ("W2L", 1)=>1,
-        ("W1S", 2)=>1, ("W1L", 2)=>1, ("W2S", 2)=>1, ("W2L", 2)=>1, # W1 fails
-        ("W1S", 3)=>1, ("W1L", 3)=>1, ("W2S", 3)=>1, ("W2L", 3)=>1,
-    ),
-    :demand_factor => Dict() # Demand constant
-)
-
-example_pk_ex = Dict(1 => 0.7, 2 => 0.2, 3 => 0.1)
-revenue_per_unit_ex = 50
-
-# nodes_ex = ["S1", "S2", "R"]
-
+# # Define network structure as a simple array of connections
 # arc_definitions_ex = [
-#     Dict(:from => "S1", :to => "R", :cost => 10),
-#     Dict(:from => "S2", :to => "R", :cost => 10),
+#     # Supplier -> Manufacturer connections
+#     Dict(:from => "S1", :to => "M1", :cost => 5.0),
+#     Dict(:from => "S1", :to => "M2", :cost => 5.5),
+#     Dict(:from => "S2", :to => "M1", :cost => 6.0),
+#     Dict(:from => "S2", :to => "M2", :cost => 6.5),
+#     Dict(:from => "S3", :to => "M1", :cost => 7.0),
+#     Dict(:from => "S3", :to => "M2", :cost => 7.5),
+
+#     # Manufacturer -> Warehouse connections
+#     Dict(:from => "M1", :to => "W1S", :cost => 2.0),
+#     Dict(:from => "M1", :to => "W1L", :cost => 2.0),
+#     Dict(:from => "M1", :to => "W2S", :cost => 2.5),
+#     Dict(:from => "M1", :to => "W2L", :cost => 2.5),
+#     Dict(:from => "M2", :to => "W1S", :cost => 2.2),
+#     Dict(:from => "M2", :to => "W1L", :cost => 2.2),
+#     Dict(:from => "M2", :to => "W2S", :cost => 2.7),
+#     Dict(:from => "M2", :to => "W2L", :cost => 2.7),
+
+#     # Warehouse -> Customer connections
+#     Dict(:from => "W1S", :to => "C1", :cost => 1.0),
+#     Dict(:from => "W1S", :to => "C2", :cost => 1.2),
+#     Dict(:from => "W1L", :to => "C1", :cost => 1.0),
+#     Dict(:from => "W1L", :to => "C2", :cost => 1.2),
+#     Dict(:from => "W2S", :to => "C1", :cost => 1.3),
+#     Dict(:from => "W2S", :to => "C2", :cost => 1.1),
+#     Dict(:from => "W2L", :to => "C1", :cost => 1.3),
+#     Dict(:from => "W2L", :to => "C2", :cost => 1.1)
 # ]
 
-# configurable_nodes_ex = ["S1", "S2"] # Suppliers and DC options
+# configurable_nodes_ex = ["S1", "S2", "S3", "W1S", "W1L", "W2S", "W2L"] # Suppliers and DC options
 
 # node_data_ex = Dict(
-#     "S1" => Dict(:type => :source, :capacity => 500, :processing_cost => 0, :opening_cost => 20),
-#     "S2" => Dict(:type => :source, :capacity => 600, :processing_cost => 0, :opening_cost => 10),
-#     "R" => Dict(:type => :demand, :demand => 1, :lost_demand_penalty => 500)
+#     "S1" => Dict(:type => :source, :capacity => 500, :processing_cost => 0),
+#     "S2" => Dict(:type => :source, :capacity => 600, :processing_cost => 0),
+#     "S3" => Dict(:type => :source, :capacity => 550, :processing_cost => 0),
+#     "M1" => Dict(:type => :intermediate, :capacity => 1000, :processing_cost => 10), # pcm[1]
+#     "M2" => Dict(:type => :intermediate, :capacity => 1200, :processing_cost => 12), # pcm[2]
+#     "W1S" => Dict(:type => :intermediate, :capacity => 200, :processing_cost => 0, :opening_cost => 100), # caplw[small,1], flw[small,1]
+#     "W1L" => Dict(:type => :intermediate, :capacity => 400, :processing_cost => 0, :opening_cost => 150), # caplw[large,1], flw[large,1]
+#     "W2S" => Dict(:type => :intermediate, :capacity => 250, :processing_cost => 0, :opening_cost => 120), # caplw[small,2], flw[small,2]
+#     "W2L" => Dict(:type => :intermediate, :capacity => 450, :processing_cost => 0, :opening_cost => 180), # caplw[large,2], flw[large,2]
+#     "C1" => Dict(:type => :demand, :demand => 150, :lost_demand_penalty => 99999999), # dc[1], lsc[1]
+#     "C2" => Dict(:type => :demand, :demand => 200, :lost_demand_penalty => 99999999)  # dc[2], lsc[2]
 # )
 
 # scenario_data_ex = Dict(
 #     :capacity_factor => Dict(
-#         ("S1", 1)=>1, ("S2", 1)=>1,
-#         ("S1", 2)=>1, ("S2", 2)=>1,
-#         ("S1", 3)=>1, ("S2", 3)=>1,
+#         # Alpha (Suppliers)
+#         ("S1", 1)=>1, ("S2", 1)=>1, ("S3", 1)=>1,
+#         ("S1", 2)=>1, ("S2", 2)=>1, ("S3", 2)=>1,
+#         ("S1", 3)=>1, ("S2", 3)=>1, ("S3", 3)=>1,
+#         # Beta (Manufacturers)
+#         ("M1", 1)=>1, ("M2", 1)=>1,
+#         ("M1", 2)=>1, ("M2", 2)=>1,
+#         ("M1", 3)=>1, ("M2", 3)=>1,
+#         # Delta (Warehouses - affects all options at a location)
+#         ("W1S", 1)=>1, ("W1L", 1)=>1, ("W2S", 1)=>1, ("W2L", 1)=>1,
+#         ("W1S", 2)=>1, ("W1L", 2)=>1, ("W2S", 2)=>1, ("W2L", 2)=>1, # W1 fails
+#         ("W1S", 3)=>1, ("W1L", 3)=>1, ("W2S", 3)=>1, ("W2L", 3)=>1,
 #     ),
-#     :demand_factor => Dict()
+#     :demand_factor => Dict() # Demand constant
 # )
 
 # example_pk_ex = Dict(1 => 0.7, 2 => 0.2, 3 => 0.1)
 # revenue_per_unit_ex = 50
+
+nodes_ex = ["S1", "S2", "R"]
+
+arc_definitions_ex = [
+    Dict(:from => "S1", :to => "R", :cost => 10),
+    Dict(:from => "S2", :to => "R", :cost => 10),
+]
+
+configurable_nodes_ex = ["S1", "S2"] # Suppliers and DC options
+
+node_data_ex = Dict(
+    "S1" => Dict(:type => :source, :capacity => 500, :processing_cost => 0, :opening_cost => 20),
+    "S2" => Dict(:type => :source, :capacity => 600, :processing_cost => 0, :opening_cost => 10),
+    "R" => Dict(:type => :demand, :demand => 1, :lost_demand_penalty => 500)
+)
+
+scenario_data_ex = Dict(
+    :capacity_factor => Dict(
+        ("S1", 1)=>1, ("S2", 1)=>1,
+        ("S1", 2)=>1, ("S2", 2)=>1,
+        ("S1", 3)=>1, ("S2", 3)=>1,
+    ),
+    :demand_factor => Dict()
+)
+
+example_pk_ex = Dict(1 => 0.7, 2 => 0.2, 3 => 0.1)
+revenue_per_unit_ex = 50
 
 # Build the generalized model
 model_gen = build_generalized_supply_chain_model(
@@ -311,6 +316,7 @@ if termination_status(model_gen) == MOI.OPTIMAL
         using GraphMakie
         using CairoMakie
         using GeometryBasics # For Point2f
+        using Colors         # For RGBA
 
         node_to_id = Dict(name => i for (i, name) in enumerate(nodes_ex))
         id_to_node = Dict(i => name for (name, i) in node_to_id)
@@ -424,6 +430,23 @@ if termination_status(model_gen) == MOI.OPTIMAL
         fig = Figure(resolution = (1024, 768)) # Increased resolution for more complex graph
         ax = Axis(fig[1,1])
         
+        # Determine edge colors based on node status (hide edges to/from red nodes)
+        edge_colors_plot = []
+        default_edge_color = Colors.parse(Colorant, :gray40)
+        transparent_color = RGBA(0,0,0,0)
+
+        for edge in edges(g)
+            src_node_idx = Graphs.src(edge)
+            dst_node_idx = Graphs.dst(edge)
+
+            # Node indices are 1-based for node_colors_plot as per its construction
+            if node_colors_plot[src_node_idx] == :red || node_colors_plot[dst_node_idx] == :red
+                push!(edge_colors_plot, transparent_color)
+            else
+                push!(edge_colors_plot, default_edge_color)
+            end
+        end
+
         graphplot!(ax, g,
             layout = layout_positions,
             node_color = node_colors_plot,
@@ -433,7 +456,7 @@ if termination_status(model_gen) == MOI.OPTIMAL
             node_size = 25,              # Adjusted node size
             arrow_size = 15,             # Adjusted arrow size
             edge_width = 2,              # Adjusted edge width
-            edge_color = :gray40
+            edge_color = edge_colors_plot # Use the dynamically determined edge colors
         )
         hidedecorations!(ax)
         hidespines!(ax)
