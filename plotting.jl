@@ -4,6 +4,7 @@ using GraphMakie
 using CairoMakie
 using GeometryBasics # For Point2f
 using Colors         # For RGBA
+using Printf         # For @sprintf in plot title
 
 # Helper function to extract the leading alphabetic prefix from a node name
 function get_node_prefix(node_name_str::String)
@@ -24,7 +25,8 @@ Args:
     node_data_ex (Dict): Node data used.
     configurable_nodes_ex (Vector): List of configurable node IDs.
     pk_ex (Dict): Scenario probabilities used.
-    output_filename (String): Filename for the saved plot (e.g., "network_plot.png").
+    output_filename (String): Filename for the saved plot. If a simple name, it's saved in 'output_plots/'.
+    plot_title (String): Optional title for the plot.
 """
 function plot_network_results(
     model_gen,
@@ -33,8 +35,26 @@ function plot_network_results(
     node_data_ex,
     configurable_nodes_ex,
     pk_ex,
-    output_filename = "supply_chain_network.png"
+    output_filename = "supply_chain_network.png",
+    plot_title::Union{String, Nothing} = nothing # Added plot_title argument
 )
+    # Prepend 'output_plots/' to filename if it's not an absolute path and doesn't already contain it
+    if !startswith(output_filename, "/") && !occursin("/", output_filename) && !startswith(output_filename, "output_plots/")
+        output_filename = joinpath("output_plots", output_filename)
+    end
+    
+    # Ensure the directory exists (in case it wasn't created)
+    output_dir = dirname(output_filename)
+    if !isdir(output_dir)
+        try
+            mkpath(output_dir)
+            println("Created directory for plots: $(output_dir)")
+        catch e
+            println("Warning: Could not create directory $(output_dir). Plot might not be saved. Error: $e")
+            # Optionally, decide if you want to proceed without saving or throw an error
+        end
+    end
+
     if termination_status(model_gen) == MOI.OPTIMAL
         try
             println("\nAttempting to generate plot: $(output_filename)")
@@ -210,6 +230,11 @@ function plot_network_results(
             fig = Figure(resolution = (1024, 768))
             ax = Axis(fig[1,1])
 
+            # Add title to the plot if provided
+            if plot_title !== nothing
+                ax.title = plot_title
+            end
+
             edge_colors_plot = []
             elabels_plot = Vector{String}(undef, ne(g))
             default_edge_color = Colors.parse(Colorant, :gray40)
@@ -271,7 +296,7 @@ function plot_network_results(
             backtrace_e = catch_backtrace()
             Base.show_backtrace(stdout, backtrace_e)
             println()
-            @warn "Plotting failed. Ensure Graphs, GraphMakie, CairoMakie, Colors, GeometryBasics are in Project.toml."
+            @warn "Plotting failed. Ensure Graphs, GraphMakie, CairoMakie, Colors, GeometryBasics, Printf are in Project.toml."
         end
     else
         println("Skipping plot generation as the model was not solved optimally. Status: ", termination_status(model_gen))

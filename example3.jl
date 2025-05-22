@@ -4,6 +4,7 @@ using HiGHS
 # Include the model building and plotting functions
 include("main_model.jl")
 include("plotting.jl")
+include("results_utils.jl")
 
 println("Running Example 3: Extended Echelons and Scenarios")
 
@@ -150,62 +151,14 @@ model_ex3 = build_generalized_supply_chain_model(
 println("Optimizing Example 3...")
 optimize!(model_ex3)
 
-# --- Check results ---
+# --- Use the shared results printing function ---
+print_supply_chain_results(model_ex3, nodes_ex3, node_data_ex3, configurable_nodes_ex3, example_pk_ex3, "Example 3")
+
+# --- Plot results if optimal ---
 if termination_status(model_ex3) == MOI.OPTIMAL
-    println("Optimal solution found for Example 3.")
-    println("Objective value: ", objective_value(model_ex3))
-
-    println("Selected Configurable Nodes (is_open):")
-    for n in configurable_nodes_ex3
-        if value(model_ex3[:is_open][n]) > 0.5
-            println("  Node ", n, " is selected/open.")
-        end
-    end
-
-    println("
---- Second-Stage Variables for Example 3 (Non-Zero Flow & Lost Demand per Scenario) ---")
-    nodes_in_flow_ex3 = union(first.(model_ex3.ext[:arcs]), last.(model_ex3.ext[:arcs]))
-    K_scen_ex3 = keys(example_pk_ex3)
-    for k in K_scen_ex3
-        println("
-  Scenario ", k, " (Probability: ", example_pk_ex3[k], ")")
-        println("    Flow (source -> destination: value):")
-        has_flow_in_scenario = false
-        for i in nodes_in_flow_ex3, j in nodes_in_flow_ex3
-             if (i, j) in model_ex3.ext[:arcs]
-                 flow_val = value(model_ex3[:flow][i, j, k])
-                 if flow_val > 1e-6 # Print non-zero values
-                     println("      ", i, " -> ", j, ": ", round(flow_val, digits=2))
-                     has_flow_in_scenario = true
-                 end
-             end
-        end
-        if !has_flow_in_scenario
-            println("      (No non-zero flow in this scenario)")
-        end
-
-        println("    Lost Demand:")
-        demand_nodes_ex3 = filter(n -> node_data_ex3[n][:type] == :demand, nodes_ex3)
-        has_lost_demand_in_scenario = false
-        for n in demand_nodes_ex3
-            if haskey(model_ex3[:lost_demand], (n, k)) # Check if variable exists for this combo
-                ld_val = value(model_ex3[:lost_demand][n, k])
-                if ld_val > 1e-6
-                    println("      Node ", n, ": ", round(ld_val, digits=2))
-                    has_lost_demand_in_scenario = true
-                end
-            end
-        end
-        if !has_lost_demand_in_scenario
-            println("      (No lost demand in this scenario)")
-        end
-    end
-
-    # Plot the results
-    plot_network_results(model_ex3, nodes_ex3, arc_definitions_ex3, node_data_ex3, configurable_nodes_ex3, example_pk_ex3, "example3_network.png")
-
+    plot_network_results(model_ex3, nodes_ex3, arc_definitions_ex3, node_data_ex3, configurable_nodes_ex3, example_pk_ex3, "example3_network.png", "Example 3 Network")
 else
-    println("Solver status for Example 3: ", termination_status(model_ex3))
+    println("Skipping plot generation for Example 3 as the model was not solved optimally. Status: ", termination_status(model_ex3))
 end
 
 println("Finished Example 3.") 
